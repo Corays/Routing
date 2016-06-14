@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.WebEncoders.Testing;
 using Moq;
 using Xunit;
+using Xunit.Extensions;
 
 namespace Microsoft.AspNetCore.Routing.Tree
 {
@@ -123,6 +124,58 @@ namespace Microsoft.AspNetCore.Routing.Tree
 
             // Assert
             Assert.Equal(expectedRouteGroup, context.RouteData.Values["test_route_group"]);
+        }
+
+        public static TheoryData<string, object[]> MatchesRoutesWithDefaultsData =>
+            new TheoryData<string, object[]>
+            {
+                { "/", new object[] { "1", "2", "3", "4" } },
+                { "/a", new object[] { "a", "2", "3", "4" } },
+                { "/a/b", new object[] { "a", "b", "3", "4" } },
+                { "/a/b/c", new object[] { "a", "b", "c", "4" } },
+                { "/a/b/c/d", new object[] { "a", "b", "c", "d" } }
+            };
+
+        [Theory]
+        [MemberData(nameof(MatchesRoutesWithDefaultsData))]
+        public async Task TreeRouter_RouteAsync_MatchesRoutesWithDefaults(string url, object[] routeValues)
+        {
+            // Arrange
+            var routes = new[] {
+                "{parameter1=1}/{parameter2=2}/{parameter3=3}/{parameter4=4}",
+            };
+
+            var expectedRouteGroup = CreateRouteGroup(0, "{parameter1=1}/{parameter2=2}/{parameter3=3}/{parameter4=4}");
+            var routeValueKeys = new[] { "parameter1", "parameter2", "parameter3", "parameter4" };
+            var expectedRouteValues = new RouteValueDictionary();
+            for (int i = 0; i < routeValueKeys.Length; i++)
+            {
+                expectedRouteValues.Add(routeValueKeys[i], routeValues[i]);
+            }
+
+            var builder = CreateBuilder();
+
+            // We setup the route entries in reverse order of precedence to ensure that when we
+            // try to route the request, the route with a higher precedence gets tried first.
+            foreach (var template in routes.Reverse())
+            {
+                MapInboundEntry(builder, template);
+            }
+
+            var route = builder.Build();
+
+            var context = CreateRouteContext(url);
+
+            // Act
+            await route.RouteAsync(context);
+
+            // Assert
+            Assert.Equal(expectedRouteGroup, context.RouteData.Values["test_route_group"]);
+            foreach (var entry in expectedRouteValues)
+            {
+                var data = Assert.Single(context.RouteData.Values, v => v.Key == entry.Key);
+                Assert.Equal(entry.Value, data.Value);
+            }
         }
 
         [Fact]
